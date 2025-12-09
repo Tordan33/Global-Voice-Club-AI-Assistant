@@ -15,7 +15,7 @@ import { checkAndEnforceVersion } from './utils/versionManager';
 // We now read the version from the manifest via the manager, 
 // but we keep this for the UI display.
 // IMPORTANT: Update 'version.json' when you update this!
-const UI_VERSION = '1.0.45'; 
+const UI_VERSION = '1.0.51'; 
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
