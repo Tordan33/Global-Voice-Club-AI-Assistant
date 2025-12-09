@@ -15,7 +15,7 @@ import { checkAndEnforceVersion } from './utils/versionManager';
 // We now read the version from the manifest via the manager, 
 // but we keep this for the UI display.
 // IMPORTANT: Update 'version.json' when you update this!
-const UI_VERSION = '1.0.32'; 
+const UI_VERSION = '1.0.45'; 
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -336,6 +336,8 @@ const App: React.FC = () => {
     setView(AppView.RECORDING);
   };
 
+  // NOTE: Changed to async and removed internal try/catch logic to allow errors 
+  // to propagate to the AudioRecorder component for display.
   const handleAnalyze = async (audioBase64: string, duration: number, mimeType: string) => {
     if (!user || !userId) return;
     
@@ -375,7 +377,6 @@ const App: React.FC = () => {
       }
 
       // 2. Update Profile DB (Streak only)
-      // We do NOT save XP to DB to avoid schema errors. XP is calculated on load.
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({ 
@@ -406,10 +407,9 @@ const App: React.FC = () => {
 
       setView(AppView.ANALYSIS);
     } catch (error: any) {
-      console.error("Analysis Error:", error);
-      // Show cleaner error message
-      const msg = error.message.includes("Timeout") ? "Analysis timed out. Please try a shorter recording." : error.message;
-      alert(`Error: ${msg}`);
+      console.error("Analysis Error in App:", error);
+      // Re-throw so AudioRecorder can catch and display
+      throw error;
     } finally {
       setIsAnalyzing(false);
     }

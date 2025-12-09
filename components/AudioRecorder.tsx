@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { AppText } from '../types';
 
 interface AudioRecorderProps {
-  onAnalyze: (audioBase64: string, duration: number, mimeType: string) => void;
+  onAnalyze: (audioBase64: string, duration: number, mimeType: string) => Promise<void>;
   isAnalyzing: boolean;
   onBack: () => void;
   text: AppText;
@@ -34,7 +34,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
   // Store the active mime type for the current session
   const activeMimeTypeRef = useRef<string>("");
 
-  const MAX_RECORDING_TIME = 300; // 5 minutes (reduced for reliability)
+  const MAX_RECORDING_TIME = 300; // 5 minutes
   const WARNING_TIME = 270; 
 
   useEffect(() => {
@@ -51,23 +51,16 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
         setAnalysisProgress(0);
         setStatusMessage("Initializing...");
         
-        // ADAPTIVE TIMING OPTIMIZATION:
-        // Move faster through the initial stages to make the app feel responsive.
-        const duration = timerRef.current || 30;
-        let baseInterval = 300; // Default faster
-        
-        // Scale interval slightly for long files, but keep it snappy
-        if (duration > 60) baseInterval = 600;
-        else if (duration > 180) baseInterval = 900;
-        
-        // Very short audio should zip through
-        if (duration < 15) baseInterval = 150;
-
-        console.log(`Loading Bar Interval: ${baseInterval}ms for duration: ${duration}s`);
+        // SPEED TARGET: 40s maximum perception (SLA is 45s).
+        // Update roughly every 200ms
+        const baseInterval = 200; 
 
         progressInterval = window.setInterval(() => {
             setAnalysisProgress(prev => {
-                // Aggressive increment until 80%
+                // Aggressive increment until 80% to show activity
+                // 0-60: +2 
+                // 60-85: +0.5
+                // 85-95: +0.1
                 const increment = prev < 60 ? 2 : prev < 85 ? 0.5 : 0.1;
                 const next = prev + increment;
                 
@@ -108,12 +101,11 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
   };
 
   // Helper to find the best supported MIME type
-  // CRITICAL FIX: Prioritize 'audio/mp4' for Safari/iOS compatibility
   const getSupportedMimeType = () => {
       const types = [
-          'audio/mp4',             // Best for Safari/iOS
-          'audio/webm;codecs=opus', // Best for Chrome/Firefox
+          'audio/webm;codecs=opus', // Most efficient (~16kbps)
           'audio/webm',
+          'audio/mp4',              // Safari / iOS legacy
           'audio/aac',
           'audio/ogg'
       ];
@@ -128,20 +120,21 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
     let stream: MediaStream | null = null;
 
     try {
-      // STRATEGY: Progressive Constraints
-      // 1. Try Optimized: 16kHz Mono (Smallest File)
+      // STRATEGY: Reliability First, Optimization Second
+      // 1. Remove 'sampleRate' constraint. Forcing 8kHz caused iOS Safari to produce empty/silent files.
+      // We rely on 'channelCount: 1' (Mono) to reduce size by 50%.
       try {
           stream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                sampleRate: 16000, 
-                channelCount: 1,
+                channelCount: 1, 
                 echoCancellation: true,
-                noiseSuppression: true
+                noiseSuppression: true,
+                autoGainControl: true
             } 
           });
       } catch (optErr) {
           console.warn("Optimized audio constraints failed. Falling back to default.", optErr);
-          // 2. Fallback: Default Device Settings (Higher compatibility)
+          // 2. Fallback: Default Device Settings
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
 
@@ -187,15 +180,23 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
       updateVisualizer();
 
       // Recorder Setup
-      // Note: We try to set bitrate, but wrap it as it crashes some Safaris
-      let options: MediaRecorderOptions = { mimeType: selectedMimeType };
+      const isOpus = selectedMimeType.includes('opus');
+      
+      let options: MediaRecorderOptions = { 
+          mimeType: selectedMimeType,
+          // BITRATE STRATEGY:
+          // Opus (Chrome/Android): 16kbps is excellent quality and tiny size.
+          // AAC/MP4 (iOS): 12kbps causes encoder failure (Empty File). 
+          // We bump AAC to 32kbps as a safe floor. iOS might ignore this and use default (~96k),
+          // but checking for emptiness later handles that.
+          audioBitsPerSecond: isOpus ? 16000 : 32000 
+      };
+      
+      // Feature Detection: Check if options are supported
       try {
-           // Try to compress if supported
-           options.audioBitsPerSecond = 32000;
-           // Test instantiation
-           new MediaRecorder(stream, options); 
+           const tempRecorder = new MediaRecorder(stream, options);
       } catch (e) {
-           // If bitrate causes fail, reset options to just mimeType
+           console.warn("Custom bitrate failed, falling back to default options.", e);
            options = { mimeType: selectedMimeType };
       }
 
@@ -211,27 +212,54 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
         try {
             const blob = new Blob(chunksRef.current, { type: selectedMimeType });
             
-            // VALIDATION: Prevent empty uploads which hang the API
+            // --- VALIDATION LAYER ---
+            
+            // 1. Empty Check
+            // If blob is < 100 bytes, the recorder failed to capture data (iOS sample rate issue usually)
             if (blob.size < 100) {
-                setError("Recording was empty or too short. Please try again.");
+                console.error("Blob size too small:", blob.size);
+                setError("Recording was empty. Please check microphone permissions and try again.");
                 return;
             }
             
-            console.log(`Audio Size: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+            // 2. Duration Check
+            const duration = timerRef.current;
+            if (duration > MAX_RECORDING_TIME + 15) { 
+                setError("Recording exceeded 5 minutes. Please try a shorter clip.");
+                return;
+            }
+            
+            // 3. Size Check
+            // We only warn here. The upload might succeed if the network is fast enough.
+            // 5 minutes at default AAC (128k) -> ~4.8MB. Base64 -> ~6.4MB.
+            // This is acceptable for most 10MB limits.
+            if (blob.size > 10 * 1024 * 1024) {
+                console.warn(`File large: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+            }
+            
+            console.log(`Audio Blob: Size=${(blob.size / 1024 / 1024).toFixed(2)} MB, Dur=${duration}s`);
     
             // Clean MIME type for API
             const safeMimeType = selectedMimeType.split(';')[0].trim();
     
             const reader = new FileReader();
             reader.readAsDataURL(blob);
-            reader.onloadend = () => {
+            
+            // Wait for file read
+            reader.onloadend = async () => {
                 if (reader.result) {
                     const base64String = (reader.result as string).split(',')[1];
-                    onAnalyze(base64String, timerRef.current, safeMimeType);
+                    try {
+                        // Await the analysis so we can catch errors
+                        await onAnalyze(base64String, duration, safeMimeType);
+                    } catch (analysisErr: any) {
+                        setError(analysisErr.message || "Analysis failed.");
+                    }
                 } else {
                     setError("Failed to process audio file.");
                 }
             };
+            
             reader.onerror = () => {
                 setError("Error reading audio data.");
             };
@@ -347,8 +375,42 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
       </div>
 
       {error && (
-        <div className="bg-red-900/30 text-red-400 p-3 rounded-lg mb-6 text-sm border border-red-900 animate-pulse">
-            {error}
+        <div className="bg-red-900/40 text-red-300 p-4 rounded-lg mb-6 text-sm border border-red-800 animate-pulse max-w-md text-left w-full">
+            <div className="flex items-start gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <div className="w-full">
+                    {(() => {
+                        try {
+                            // Attempt to parse structured error from service
+                            const errObj = JSON.parse(error);
+                            return (
+                                <>
+                                    <strong className="block font-bold text-red-200 mb-1">Analysis Failed</strong>
+                                    <p className="mb-2">{errObj.uiMessage}</p>
+                                    <details className="mt-2 text-xs bg-black/40 rounded p-2 border border-red-900/50">
+                                        <summary className="cursor-pointer font-mono text-red-400 hover:text-red-300 select-none">
+                                            View Technical Details
+                                        </summary>
+                                        <div className="mt-2 font-mono whitespace-pre-wrap break-words opacity-80 overflow-x-auto">
+                                            {errObj.debug}
+                                        </div>
+                                    </details>
+                                </>
+                            );
+                        } catch (e) {
+                            // Fallback for simple string errors (e.g. mic permission)
+                            return (
+                                <>
+                                    <strong className="block font-bold text-red-200 mb-1">Error</strong>
+                                    <p>{error}</p>
+                                </>
+                            );
+                        }
+                    })()}
+                </div>
+            </div>
         </div>
       )}
 
