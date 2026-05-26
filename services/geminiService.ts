@@ -40,60 +40,153 @@ const analysisSchema: Schema = {
 
 // --- HELPERS ---
 
-// Robust fallback generator to ensure the promise ALWAYS resolves
-const generateFallbackAnalysis = (reason: string): AIAnalysis => {
+const generateFallbackAnalysis = (reason: string, partialData?: Partial<AIAnalysis>): AIAnalysis => {
     console.warn("Generating Fallback Analysis. Reason:", reason);
     
-    // Generate 10 generic feedback items to satisfy existing constraints
-    const feedback = Array(10).fill(null).map((_, i) => ({
-        original: i === 0 ? "(Audio processing delay)" : "...",
-        correction: i === 0 ? "Please try a shorter recording" : "...",
-        explanation: "The AI analysis took too long to complete. We've saved your session, but detailed feedback is unavailable."
-    }));
+    // Default values if partial data is missing
+    const baseScore = partialData?.score !== undefined ? partialData.score : 75;
+    
+    // STRICT RULE: Do not invent corrections.
+    // If we have partial feedback, use it. If not, return empty array.
+    // This prevents "Audio processed partially" from appearing as a fake correction.
+    const feedback = (partialData?.feedback && partialData.feedback.length > 0) 
+        ? partialData.feedback 
+        : [];
     
     return {
-        score: 70, // Neutral score so it doesn't discourage
-        grammarScore: 70,
-        pronunciationScore: 70,
-        fluencyScore: 70,
-        vocabularyScore: 70,
+        score: baseScore, 
+        grammarScore: partialData?.grammarScore !== undefined ? partialData.grammarScore : baseScore,
+        pronunciationScore: partialData?.pronunciationScore !== undefined ? partialData.pronunciationScore : baseScore,
+        fluencyScore: partialData?.fluencyScore !== undefined ? partialData.fluencyScore : baseScore,
+        vocabularyScore: partialData?.vocabularyScore !== undefined ? partialData.vocabularyScore : baseScore,
         feedback,
-        tips: [
-            "Ensure you have a stable internet connection.",
-            "Try keeping recordings under 2 minutes for faster results.",
-            "Speak clearly and close to the microphone.",
-            "Reduce background noise.",
-            "Practice regularly to improve speed."
+        tips: partialData?.tips && partialData.tips.length > 0 ? partialData.tips : [
+            "Practice speaking daily.",
+            "Listen to native English content.",
+            "Record yourself often to check progress."
         ],
-        encouragement: "We captured your practice! The AI was a bit slow today, but keep going!",
-        transcript: "(Transcript unavailable due to timeout)",
+        encouragement: partialData?.encouragement || "Analysis incomplete, but good effort!",
+        transcript: partialData?.transcript || "(Transcript unavailable - Recovery Mode)",
         timestamp: new Date().toISOString()
     };
 };
 
-const safeJSONParse = (text: string): any => {
-    try {
-        // 1. Try direct parse
-        return JSON.parse(text);
-    } catch (e) {
-        // 2. Try cleanup
-        const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        try {
-            return JSON.parse(clean);
-        } catch (e2) {
-            // 3. Try aggressive repair (find first { and last })
-            const first = clean.indexOf('{');
-            const last = clean.lastIndexOf('}');
-            if (first !== -1 && last !== -1) {
-                try {
-                     return JSON.parse(clean.substring(first, last + 1));
-                } catch (e3) {
-                    throw new Error("JSON Parse Failed");
-                }
-            }
-            throw new Error("Invalid JSON structure");
-        }
+const repairJSON = (jsonStr: string): string => {
+    let repaired = jsonStr.trim();
+    // 1. Remove trailing commas before closing braces
+    repaired = repaired.replace(/,\s*([\]}])/g, '$1');
+    
+    // 2. Close open strings if cut off (heuristic: odd count of unescaped quotes)
+    // This is risky, but better than a crash.
+    const quoteCount = (repaired.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) {
+        repaired += '"';
     }
+
+    // 3. Balance Brackets/Braces
+    const openBraces = (repaired.match(/\{/g) || []).length;
+    const closeBraces = (repaired.match(/\}/g) || []).length;
+    const openBrackets = (repaired.match(/\[/g) || []).length;
+    const closeBrackets = (repaired.match(/\]/g) || []).length;
+
+    if (openBrackets > closeBrackets) repaired += ']'.repeat(openBrackets - closeBrackets);
+    if (openBraces > closeBraces) repaired += '}'.repeat(openBraces - closeBraces);
+
+    return repaired;
+};
+
+// Improved Regex Extraction to salvage data when JSON fails
+const extractViaRegex = (text: string): Partial<AIAnalysis> | null => {
+    console.log("Attempting Regex Extraction...");
+    try {
+        const scoreMatch = text.match(/"score"\s*:\s*(\d+)/);
+        const grammarMatch = text.match(/"grammarScore"\s*:\s*(\d+)/);
+        const transcriptMatch = text.match(/"transcript"\s*:\s*"([\s\S]*?)(?:"\s*\}|$)/);
+        
+        // Attempt to find feedback items (basic)
+        // Look for objects containing "original" and "correction"
+        const feedbackItems: FeedbackItem[] = [];
+        const feedbackRegex = /{\s*"original"\s*:\s*"([^"]+)"\s*,\s*"correction"\s*:\s*"([^"]+)"\s*,\s*"explanation"\s*:\s*"([^"]+)"\s*}/g;
+        let match;
+        while ((match = feedbackRegex.exec(text)) !== null) {
+            feedbackItems.push({
+                original: match[1],
+                correction: match[2],
+                explanation: match[3]
+            });
+        }
+
+        if (scoreMatch || feedbackItems.length > 0) {
+            return {
+                score: scoreMatch ? parseInt(scoreMatch[1]) : 70,
+                grammarScore: grammarMatch ? parseInt(grammarMatch[1]) : undefined,
+                transcript: transcriptMatch ? transcriptMatch[1] : undefined,
+                feedback: feedbackItems
+            };
+        }
+    } catch (e) {
+        console.warn("Regex extraction failed", e);
+    }
+    return null;
+};
+
+// Validator to ensure we don't return empty "valid" JSON
+const validateAnalysis = (data: any): boolean => {
+    if (!data || typeof data !== 'object') return false;
+    // Must have at least a score OR some feedback to be useful
+    // Note: It's valid to have 0 feedback items now (perfect score), so we relax that check
+    if (typeof data.score !== 'number') {
+        return false;
+    }
+    return true;
+};
+
+const safeJSONParse = (text: string): any => {
+    if (!text) throw new Error("Empty JSON text");
+    
+    let clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    // STRATEGY 1: Direct Parse
+    try {
+        const result = JSON.parse(clean);
+        if (validateAnalysis(result)) {
+            console.log("JSON Parse: Success (Direct)");
+            return result;
+        }
+    } catch (e) { /* continue */ }
+
+    // STRATEGY 2: Repair & Parse
+    try {
+        const repaired = repairJSON(clean);
+        const result = JSON.parse(repaired);
+        if (validateAnalysis(result)) {
+            console.log("JSON Parse: Success (Repaired)");
+            return result;
+        }
+    } catch (e) { /* continue */ }
+
+    // STRATEGY 3: Substring Rescue (if wrapper is broken)
+    try {
+        const first = clean.indexOf('{');
+        const last = clean.lastIndexOf('}');
+        if (first !== -1 && last !== -1) {
+            const sub = clean.substring(first, last + 1);
+            const result = JSON.parse(sub);
+             if (validateAnalysis(result)) {
+                console.log("JSON Parse: Success (Substring)");
+                return result;
+            }
+        }
+    } catch (e) { /* continue */ }
+
+    // STRATEGY 4: Regex Fallback (Last Resort)
+    const regexResult = extractViaRegex(text);
+    if (regexResult && validateAnalysis(regexResult)) {
+        console.log("JSON Parse: Success (Regex Fallback)");
+        return regexResult; // Return partial data, generateRequest will fill gaps
+    }
+
+    throw new Error("Data Extraction Failed (All Strategies)");
 };
 
 const normalizeFeedback = (rawFeedback: any): FeedbackItem[] => {
@@ -107,28 +200,9 @@ const normalizeFeedback = (rawFeedback: any): FeedbackItem[] => {
             .filter(item => item.original && item.correction)
         : [];
 
-    const trimmed = safeList.slice(0, 10);
-
-    const paddingPool: FeedbackItem[] = [
-        { original: "(Volume)", correction: "Speak louder.", explanation: "Maintain steady volume." },
-        { original: "(Pacing)", correction: "Slow down.", explanation: "Rushing causes slurred words." },
-        { original: "(Completeness)", correction: "Finish sentences.", explanation: "Avoid trailing off." },
-        { original: "(Clarity)", correction: "Enunciate clearly.", explanation: "Vowel sounds were muddy." },
-        { original: "(Grammar)", correction: "Check verb tense.", explanation: "Ensure verbs match time." },
-        { original: "(Intonation)", correction: "Use rising tone?", explanation: "Pitch was too flat." },
-        { original: "(Structure)", correction: "Shorten sentences.", explanation: "Long sentences lose clarity." },
-        { original: "(Confidence)", correction: "Project voice.", explanation: "Confidence improves fluency." },
-        { original: "(Diction)", correction: "Hit consonants.", explanation: "Endings were soft." },
-        { original: "(Flow)", correction: "Use connectors.", explanation: "Link ideas with 'and/but'." }
-    ];
-
-    let poolIndex = 0;
-    while (trimmed.length < 10) {
-        trimmed.push(paddingPool[poolIndex % paddingPool.length]);
-        poolIndex++;
-    }
-
-    return trimmed;
+    // STRICT: Only return max 10, but DO NOT PAD.
+    // If list is empty, return empty.
+    return safeList.slice(0, 10);
 };
 
 const generateRequest = async (
@@ -140,7 +214,6 @@ const generateRequest = async (
 ): Promise<any> => {
     const controller = new AbortController();
     
-    // Safety: If the promise logic hangs, this ensures we throw internally
     const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => {
             controller.abort(); 
@@ -156,7 +229,7 @@ const generateRequest = async (
                 responseMimeType: "application/json",
                 responseSchema: schema,
                 systemInstruction: systemInstruction,
-                maxOutputTokens: 4096, // Reduced from 8192 to speed up completion
+                maxOutputTokens: 8192, // High limit for long audio
                 temperature: 0.2, 
                 safetySettings: [
                      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -167,24 +240,24 @@ const generateRequest = async (
             }
         });
 
-        // Race: API vs Timeout
         const result: any = await Promise.race([apiPromise, timeoutPromise]);
         
         let responseText = result?.text;
         const candidate = result?.candidates?.[0];
 
-        // Fallback text extraction
         if (!responseText && candidate?.content?.parts) {
              responseText = candidate.content.parts.map((p: any) => p.text).join('');
         }
 
         if (!responseText) throw new Error("EMPTY_RESPONSE");
         
+        // PARSE & VALIDATE
+        // safeJSONParse now includes the Regex Fallback strategy internally
         return safeJSONParse(responseText);
 
     } catch (error: any) {
         if (error.message === 'API_TIMEOUT') throw error;
-        // Map other API errors
+        
         console.warn("AI Raw Error:", error);
         throw new Error("API_ERROR");
     }
@@ -193,9 +266,7 @@ const generateRequest = async (
 export const analyzeAudio = async (base64Audio: string, duration: number, mimeType: string, language: 'en' | 'zh'): Promise<AIAnalysis> => {
     
     // --- SLA CONFIGURATION ---
-    // Target: 60s total. 
-    // We set backend timeout to 55s to ensure we return *something* to the frontend before its 100s watchdog.
-    const SLA_TIMEOUT_MS = 55000; 
+    const SLA_TIMEOUT_MS = 85000; 
 
     if (!base64Audio || base64Audio.length < 100) throw new Error("Audio is empty.");
     if (base64Audio.length > 15 * 1024 * 1024) throw new Error("File too large (>15MB).");
@@ -205,21 +276,28 @@ export const analyzeAudio = async (base64Audio: string, duration: number, mimeTy
         langContext = "Role: ESL Teacher. Output: JSON. Language: Explanations in Traditional Chinese, Corrections in English.";
     }
 
-    // Minimized Prompt for Speed
+    // --- OPTIMIZED PROMPT ---
     const promptInstructions = `
-    Task: Analyze audio.
-    1. Transcribe speech.
-    2. Score (0-100).
-    3. 10 corrections.
-    4. 5 tips.
-    Output JSON.
+    Task: Analyze audio transcript for English mistakes.
+    CRITICAL: Identify ONLY ACTUAL English mistakes (grammar, pronunciation, vocabulary).
+    If there are no mistakes, return an empty feedback array.
+    Do NOT fabricate errors. Do NOT add generic advice like "Speak louder" in the feedback array.
+    Limit feedback to the top 10 most important corrections.
+
+    Output JSON object with these keys in this specific order:
+    1. score (number)
+    2. grammarScore (number)
+    3. pronunciationScore (number)
+    4. fluencyScore (number)
+    5. vocabularyScore (number)
+    6. feedback (array of objects: original, correction, explanation)
+    7. tips (array of strings)
+    8. encouragement (string)
+    9. transcript (string) -- Put transcript LAST.
     `;
 
-    // --- FAIL-SAFE RACE CONDITION ---
-    // If 'logicPromise' takes longer than SLA_TIMEOUT_MS, 'timeoutPromise' wins and returns a Fallback Report.
-    // This guarantees the function resolves and the UI never hangs.
-    
     const logicPromise = async () => {
+        // Attempt generation
         const result = await generateRequest(
             'gemini-2.5-flash', 
             {
@@ -229,31 +307,42 @@ export const analyzeAudio = async (base64Audio: string, duration: number, mimeTy
                 ]
             },
             analysisSchema,
-            SLA_TIMEOUT_MS - 2000, // Inner timeout slightly shorter
+            SLA_TIMEOUT_MS - 2000, 
             langContext
         );
 
+        // MERGE LOGIC: Even if 'result' is partial (from regex), we fill the gaps here
+        // instead of throwing an error.
+        
+        const baseScore = result.score || 70;
+
         return {
-            ...result,
+            score: baseScore,
+            grammarScore: result.grammarScore || baseScore,
+            pronunciationScore: result.pronunciationScore || baseScore,
+            fluencyScore: result.fluencyScore || baseScore,
+            vocabularyScore: result.vocabularyScore || baseScore,
             feedback: normalizeFeedback(result.feedback),
             tips: Array.isArray(result.tips) ? result.tips.slice(0, 5) : [],
-            transcript: result.transcript || "(No transcript)",
+            encouragement: result.encouragement || "Great job practicing!",
+            transcript: result.transcript || "(Transcript unavailable)",
             timestamp: new Date().toISOString()
         } as AIAnalysis;
     };
 
     const timeoutPromise = new Promise<AIAnalysis>((resolve) => {
         setTimeout(() => {
-            resolve(generateFallbackAnalysis("Timeout (55s Limit Reached)"));
+            resolve(generateFallbackAnalysis("Timeout (85s Limit Reached)"));
         }, SLA_TIMEOUT_MS);
     });
 
     try {
-        console.log(`Starting Analysis (Fail-Safe Mode). Size: ${(base64Audio.length/1024/1024).toFixed(2)}MB`);
+        console.log(`Starting Analysis. Size: ${(base64Audio.length/1024/1024).toFixed(2)}MB`);
         return await Promise.race([logicPromise(), timeoutPromise]);
     } catch (error: any) {
-        // If logicPromise throws a fatal error (network, auth), we also return fallback to keep app alive
         console.error("Analysis Exception:", error);
+        
+        // Only return generic fallback if EVERYTHING failed (including regex rescue)
         return generateFallbackAnalysis(error.message || "Unknown Error");
     }
 };

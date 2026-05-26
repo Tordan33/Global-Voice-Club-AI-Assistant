@@ -1,3 +1,4 @@
+
 import { translations } from './utils/translations';
 
 export interface UserProfile {
@@ -5,8 +6,8 @@ export interface UserProfile {
     email: string;
     streak: number;
     lastRecordingDate: string | null;
-    xp: number;   // Calculated dynamically
-    level: number; // Calculated dynamically
+    xp: number;   
+    level: number; 
 }
 
 export interface FeedbackItem {
@@ -17,7 +18,7 @@ export interface FeedbackItem {
 
 export interface AIAnalysis {
     transcript: string;
-    score: number; // 0-100
+    score: number; 
     grammarScore: number;
     pronunciationScore: number;
     fluencyScore: number;
@@ -26,6 +27,25 @@ export interface AIAnalysis {
     tips: string[];
     encouragement: string;
     timestamp: string;
+}
+
+export interface TaskItem {
+    goal: string;
+    whatToSay: string;
+    timeRule: string;
+    completion: string;
+}
+
+export interface SentenceUpgrade {
+    original: string;
+    improved: string;
+}
+
+export interface ActionPlanData {
+    insight: string;
+    goal: string;
+    tasks: TaskItem[];
+    upgrade?: SentenceUpgrade;
 }
 
 export enum AppView {

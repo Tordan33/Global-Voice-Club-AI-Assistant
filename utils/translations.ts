@@ -1,242 +1,102 @@
 
-
 export type Language = 'en' | 'zh';
 
-// Action Plan Suggestion Dictionary
 export const actionPlan = {
     en: {
         grammar: {
             beginner: {
-                title: "Master Simple Sentence Structures",
-                details: "At this stage, your goal is to build a solid foundation. Focus on Subject-Verb-Object (S-V-O) order. Avoid complex clauses for now.",
+                insight: "Your sentences often skip the main verb when you are thinking about what to say. This makes your English sound like a list of words rather than a complete thought.",
+                goal: "After completing this plan, you will be able to speak 5 complete sentences about your morning routine without dropping a single verb.",
                 tasks: [
-                    "Write 5 simple sentences about your day every morning.",
-                    "Practice the past tense regular verbs ending in '-ed'.",
-                    "Read a children's book aloud to see simple grammar in action."
-                ]
+                    { goal: "Practice basic S-V-O structure", whatToSay: "Situation: You are telling a friend about your morning. Say: 'I woke up. I drank water. I walked to the door. I saw my keys. I left the house.'", timeRule: "Speak clearly. No time limit.", completion: "Complete the recording of all 5 sentences twice." },
+                    { goal: "Combine thoughts naturally", whatToSay: "Situation: You are at work. Say: 'I arrived at 9 AM and I started my computer.'", timeRule: "Speak at a steady pace.", completion: "Finish one recording without pausing before 'and'." }
+                ],
+                upgrade: { original: "I morning coffee bread.", improved: "I had coffee and bread this morning." }
             },
             intermediate: {
-                title: "Connecting Your Ideas",
-                details: "You are ready to move beyond short sentences. Start using conjunctions to create flow and express complex thoughts.",
+                insight: "Your main challenge is connecting ideas. You tend to speak in short, separate bursts, which stops your listener from understanding your logic clearly.",
+                goal: "You will be able to explain a simple work decision using 'because' to link two facts in one smooth breath.",
                 tasks: [
-                    "Combine two sentences using 'because', 'although', or 'however'.",
-                    "Practice the Present Perfect tense (e.g., 'I have been...').",
-                    "Watch English news and write down complex sentences you hear."
-                ]
-            },
-            advanced: {
-                title: "Refining Nuance and Precision",
-                details: "Your grammar is strong. Now focus on precision, style, and native-like phrasing using advanced articles and prepositions.",
-                tasks: [
-                    "Study 'conditional' sentences (If I had known...).",
-                    "Read an academic article and analyze the sentence structures.",
-                    "Practice using passive voice for formal descriptions."
-                ]
+                    { goal: "Use connectors in context", whatToSay: "Situation: A colleague asks why you chose a specific restaurant. Say: 'I chose that place because it is very quiet and the food is healthy.'", timeRule: "Speak for 30 seconds.", completion: "One recording with two different 'because' sentences." },
+                    { goal: "Contrast ideas", whatToSay: "Situation: Explaining why a project is late. Say: 'Although the team worked hard, we needed more time to finish.'", timeRule: "Start the sentence with 'Although'.", completion: "Record the sentence three times without stopping." }
+                ],
+                upgrade: { original: "The project hard. We need time.", improved: "Although the project was hard, we managed to finish it." }
             }
         },
         vocabulary: {
             beginner: {
-                title: "Building Your Daily Toolkit",
-                details: "Expand your ability to name the world around you. Focus on high-frequency verbs and nouns.",
+                insight: "You rely heavily on the word 'thing' or 'this' because you don't yet have the specific names for your daily items.",
+                goal: "You will be able to name 5 specific items in your office or room correctly without hesitation.",
                 tasks: [
-                    "Label 5 objects in your room with English sticky notes.",
-                    "Learn 3 new verbs related to your daily routine.",
-                    "Describe your breakfast using 3 different adjectives."
-                ]
-            },
-            intermediate: {
-                title: "Beyond 'Good' and 'Bad'",
-                details: "Stop using basic adjectives. Expanding your range of synonyms allows you to express emotions and situations accurately.",
-                tasks: [
-                    "Find 3 synonyms for 'happy', 'sad', and 'angry'.",
-                    "Learn one English idiom per day (e.g., 'Piece of cake').",
-                    "Keep a word journal and write a sentence for every new word."
-                ]
-            },
-            advanced: {
-                title: "Professional & Academic Proficiency",
-                details: "Focus on domain-specific vocabulary and formal language suitable for business or academic settings.",
-                tasks: [
-                    "Learn phrasal verbs (e.g., 'carry out' instead of 'do').",
-                    "Practice explaining a complex topic (like AI or Politics) in 2 minutes.",
-                    "Read the editorial section of an English newspaper."
-                ]
+                    { goal: "Identify surroundings", whatToSay: "Situation: You are showing someone your desk. Say: 'This is my laptop. This is my monitor. This is my notebook.'", timeRule: "Point and speak within 10 seconds.", completion: "Complete the sequence 5 times." },
+                    { goal: "Describe functions", whatToSay: "Situation: Explaining what you use. Say: 'I use my pen to write. I use my phone to call.'", timeRule: "Speak in full sentences.", completion: "One recording of both sentences." }
+                ],
+                upgrade: { original: "Give me the thing.", improved: "Please pass me the notebook." }
             }
         },
         pronunciation: {
             beginner: {
-                title: "Clarity Over Speed",
-                details: "Don't rush. The goal is to be understood. Focus on the distinct sounds that don't exist in your native language.",
+                insight: "You are cutting off the final 's' or 't' sounds at the end of words. This makes it hard for listeners to tell if you are talking about one thing or many things.",
+                goal: "You will clearly pronounce the final consonant sound in 10 simple words during a short narrative.",
                 tasks: [
-                    "Practice the 'TH' sound (Think vs. Sink) in front of a mirror.",
-                    "Read a paragraph slowly and loudly.",
-                    "Focus on pronouncing the final consonant of every word."
-                ]
-            },
-            intermediate: {
-                title: "Rhythm and Intonation",
-                details: "English is a stress-timed language. Focus on which words in a sentence should be louder and longer.",
-                tasks: [
-                    "Use the 'Shadowing' technique: Repeat instantly after a native speaker video.",
-                    "Record yourself saying a sentence and compare it to a native audio.",
-                    "Practice linking words together (e.g., 'pick it up' sounds like 'pi-ki-tup')."
-                ]
-            },
-            advanced: {
-                title: "Mastering the Native Flow",
-                details: "Focus on the subtle aspects of connected speech, reduction, and emotional intonation.",
-                tasks: [
-                    "Identify and practice 'Schwa' sounds in unstressed syllables.",
-                    "Practice emotional intonation: Say 'Really?' in 5 different ways.",
-                    "Listen to a podcast and mimic the speaker's breathing and pausing."
-                ]
+                    { goal: "Consonant snap", whatToSay: "Situation: Listing items. Say: 'Cats. Books. Maps. Hats. Lights.' Emphasis on the 's' and 'ts'.", timeRule: "Over-emphasize the end sounds.", completion: "Record once, then listen to check if you can hear the final 's'." },
+                    { goal: "Ending 't' clarity", whatToSay: "Situation: Ordering food. Say: 'I want a hot toast.' Emphasis on 't' in 'want', 'hot', and 'toast'.", timeRule: "Speak slowly first, then normal speed.", completion: "Record three times." }
+                ],
+                upgrade: { original: "He like cat.", improved: "He likes cats." }
             }
         },
         fluency: {
             beginner: {
-                title: "Overcoming the Fear of Speaking",
-                details: "The biggest barrier now is hesitation. It is okay to make mistakes. The goal is just to keep sound coming out.",
+                insight: "Your speaking stops whenever you need to think of a word. These long silences break the connection with your listener.",
+                goal: "You will be able to speak for 30 seconds straight without a pause longer than 2 seconds.",
                 tasks: [
-                    "Describe your day to yourself in the mirror for 1 minute.",
-                    "Don't translate from your native language; think in simple English images.",
-                    "Read a short text aloud without stopping, even if you stumble."
-                ]
-            },
-            intermediate: {
-                title: "Reducing Pauses",
-                details: "Try to eliminate long silences. Use 'filler words' naturally to buy yourself thinking time.",
-                tasks: [
-                    "Practice talking for 2 minutes on a random topic without stopping.",
-                    "Learn fillers like: 'Well...', 'Actually...', 'You know...'.",
-                    "Record a voice message to a friend summarizing a movie."
-                ]
-            },
-            advanced: {
-                title: "Debate and Persuasion",
-                details: "Challenge yourself with complex topics. You should be able to switch between formal and informal tones effortlessly.",
-                tasks: [
-                    "Record a 3-minute argument for or against a topic.",
-                    "Practice speaking faster while maintaining clear enunciation.",
-                    "Summarize a news article in 30 seconds."
-                ]
+                    { goal: "Continuous flow", whatToSay: "Situation: Describing your favorite color. Say why you like it and name 3 things that are that color.", timeRule: "Speak for exactly 30 seconds.", completion: "Recording finishes without any silence longer than 2 seconds." },
+                    { goal: "Using filler words", whatToSay: "Situation: Someone asks your opinion on a movie. Use 'Well...' or 'Actually...' when you start to think.", timeRule: "Do not stop talking.", completion: "Record a 45-second review using fillers." }
+                ],
+                upgrade: { original: "(silence) ... pizza good.", improved: "Well, actually, the pizza was very good." }
             }
         }
     },
     zh: {
         grammar: {
             beginner: {
-                title: "掌握簡單句型結構",
-                details: "在這個階段，目標是建立穩固的基礎。專注於主詞-動詞-受詞（S-V-O）的順序。暫時避免使用複雜的子句。",
+                insight: "你在思考時經常漏掉主動詞。這讓你的英語聽起來像是單詞列表，而不是完整的想法。",
+                goal: "完成此計畫後，你將能說出 5 個關於早晨例行公事的完整句子，且不漏掉任何動詞。",
                 tasks: [
-                    "每天早上寫 5 個關於你一天的簡單句子。",
-                    "練習以 '-ed' 結尾的規則動詞過去式。",
-                    "大聲朗讀童書，觀察簡單的文法運作。"
-                ]
-            },
-            intermediate: {
-                title: "連結你的想法",
-                details: "你已經準備好超越短句了。開始使用連接詞來創造流動性並表達複雜的想法。",
-                tasks: [
-                    "使用 'because'、'although' 或 'however' 連接兩個句子。",
-                    "練習現在完成式（例如：'I have been...'）。",
-                    "觀看英語新聞並寫下你聽到的複雜句子。"
-                ]
-            },
-            advanced: {
-                title: "精修細微差別與精確度",
-                details: "你的文法很強。現在專注於精確度、風格，以及使用高級冠詞和介系詞的道地表達方式。",
-                tasks: [
-                    "研讀「條件句」（If I had known...）。",
-                    "閱讀學術文章並分析其句型結構。",
-                    "練習使用被動語態進行正式描述。"
-                ]
+                    { goal: "練習基礎 S-V-O 結構", whatToSay: "情境：你正在告訴朋友你的早晨。說：'I woke up. I drank water. I walked to the door. I saw my keys. I left the house.'", timeRule: "清晰說話，無時間限制。", completion: "完成這 5 個句子的錄音兩次。" },
+                    { goal: "自然組合想法", whatToSay: "情境：你在工作。說：'I arrived at 9 AM and I started my computer.'", timeRule: "以穩定的節奏說話。", completion: "完成一段錄音，且在 'and' 之前沒有停頓。" }
+                ],
+                upgrade: { original: "I morning coffee bread.", improved: "I had coffee and bread this morning." }
             }
         },
         vocabulary: {
             beginner: {
-                title: "建立日常詞彙庫",
-                details: "擴展你命名周圍世界的能力。專注於高頻率的動詞和名詞。",
+                insight: "你過度依賴 'thing' 或 'this'，因為你還沒有掌握日常用品的具體名稱。",
+                goal: "你將能毫不猶豫地正確命名辦公室或房間內的 5 個具體物品。",
                 tasks: [
-                    "用英語便利貼標記房間裡的 5 個物品。",
-                    "學習 3 個與你日常生活相關的新動詞。",
-                    "用 3 個不同的形容詞描述你的早餐。"
-                ]
-            },
-            intermediate: {
-                title: "超越 'Good' 和 'Bad'",
-                details: "停止使用基本形容詞。擴展同義詞庫能讓你更準確地表達情感和情況。",
-                tasks: [
-                    "找出 'happy'、'sad' 和 'angry' 的 3 個同義詞。",
-                    "每天學習一個英語成語（例如：'Piece of cake'）。",
-                    "保持一個單字日記，並為每個新單字造句。"
-                ]
-            },
-            advanced: {
-                title: "專業與學術能力",
-                details: "專注於適合商業或學術場合的領域特定詞彙和正式語言。",
-                tasks: [
-                    "學習片語動詞（例如用 'carry out' 代替 'do'）。",
-                    "練習在 2 分鐘內解釋一個複雜主題（如 AI 或政治）。",
-                    "閱讀英文報紙的社論版面。"
-                ]
+                    { goal: "辨識環境", whatToSay: "情境：你正在向某人展示你的辦公桌。說：'This is my laptop. This is my monitor. This is my notebook.'", timeRule: "在 10 秒內指點並說出名稱。", completion: "完成該序列 5 次。" }
+                ],
+                upgrade: { original: "Give me the thing.", improved: "Please pass me the notebook." }
             }
         },
         pronunciation: {
             beginner: {
-                title: "清晰度重於速度",
-                details: "不要急。目標是被理解。專注於母語中不存在的獨特發音。",
+                insight: "你省略了單字末尾的 's' 或 't' 音。這讓聽者難以判斷你是在說單數還是複數。",
+                goal: "你將在簡短的敘述中清晰地發出 10 個簡單單字的末尾輔音。",
                 tasks: [
-                    "在鏡子前練習 'TH' 音（Think vs. Sink）。",
-                    "緩慢且大聲地朗讀一段文章。",
-                    "專注於發出每個單字的字尾輔音。"
-                ]
-            },
-            intermediate: {
-                title: "節奏與語調",
-                details: "英語是一種重音計時語言。專注於句子中哪些詞應該更大聲、更長。",
-                tasks: [
-                    "使用「跟讀法」(Shadowing)：在母語者影片後立即重複。",
-                    "錄下自己說的一句話，並與母語音檔進行比較。",
-                    "練習連音（例如：'pick it up' 聽起來像 'pi-ki-tup'）。"
-                ]
-            },
-            advanced: {
-                title: "掌握母語者的流動感",
-                details: "專注於連貫語音、弱化音和情感語調的細微之處。",
-                tasks: [
-                    "識別並練習非重音音節中的 'Schwa' (央元音)。",
-                    "練習情感語調：用 5 種不同的方式說 'Really?'。",
-                    "聽 Podcast 並模仿講者的呼吸和停頓。"
-                ]
+                    { goal: "結尾輔音強化", whatToSay: "情境：列出物品。說：'Cats. Books. Maps. Hats. Lights.' 強調 's' 和 'ts'。", timeRule: "過度強調結尾發音。", completion: "錄音一次，然後聽聽看是否能聽到末尾的 's'。" }
+                ],
+                upgrade: { original: "He like cat.", improved: "He likes cats." }
             }
         },
         fluency: {
             beginner: {
-                title: "克服開口的恐懼",
-                details: "現在最大的障礙是猶豫。犯錯沒關係。目標只是讓聲音持續發出來。",
+                insight: "每當你需要思考單字時，說話就會中斷。這些長時間的停頓會打斷與聽者的連結。",
+                goal: "你將能夠連續說話 30 秒，且停頓不超過 2 秒。",
                 tasks: [
-                    "在鏡子前用 1 分鐘描述你的一天。",
-                    "不要從母語翻譯；試著用簡單的英語圖像思考。",
-                    "大聲朗讀短文且不中斷，即使結巴也要繼續。"
-                ]
-            },
-            intermediate: {
-                title: "減少停頓",
-                details: "嘗試消除長時間的沉默。自然地使用「填充詞」來爭取思考時間。",
-                tasks: [
-                    "練習針對隨機主題不間斷地說話 2 分鐘。",
-                    "學習填充詞，如：'Well...', 'Actually...', 'You know...'.",
-                    "錄製語音訊息給朋友，總結一部電影。"
-                ]
-            },
-            advanced: {
-                title: "辯論與說服",
-                details: "用複雜的主題挑戰自己。你應該能夠輕鬆地在正式和非正式語氣之間切換。",
-                tasks: [
-                    "針對一個主題錄製 3 分鐘的支持或反對論點。",
-                    "練習在保持清晰咬字的同時加快語速。",
-                    "在 30 秒內總結一篇新聞文章。"
-                ]
+                    { goal: "持續輸出", whatToSay: "情境：描述你最喜歡的顏色。說出為什麼喜歡它並命名 3 個該顏色的物品。", timeRule: "說滿 30 秒。", completion: "錄音完成且中途無超過 2 秒的沉默。" }
+                ],
+                upgrade: { original: "(silence) ... pizza good.", improved: "Well, actually, the pizza was very good." }
             }
         }
     }
@@ -266,6 +126,7 @@ export const translations = {
     enterEmailForRecovery: "Enter your email to receive a password reset link.",
     invalidCredentials: "Incorrect email or password. Please try again.",
     genericAuthError: "Authentication failed. Please check your details.",
+    howToUse: "How to use this app?",
     
     // Header
     profile: "Profile",
@@ -287,6 +148,7 @@ export const translations = {
     grammar: "Grammar",
     vocabulary: "Vocabulary",
     pronunciation: "Pronunciation",
+    fluency: "Fluency",
     recentSessions: "Recent Sessions",
     speakingPractice: "Speaking Practice",
     focus: "Focus",
@@ -304,6 +166,13 @@ export const translations = {
     recommendedFocus: "Recommended Focus",
     viewDetails: "View Details & Exercises",
     hideDetails: "Hide Details",
+    goalLabel: "Speaking Goal",
+    tasksLabel: "Targeted Speaking Tasks",
+    insightLabel: "Personalized Insight",
+    upgradeLabel: "Sentence Upgrade",
+    actionLabel: "Action",
+    congratsTasks: "All tasks completed! Record more sessions to unlock new strategies.",
+    pointsToRefresh: "pts to next refresh",
     
     // Ranks
     rankNovice: "Novice",
@@ -327,7 +196,6 @@ export const translations = {
     downloadPdf: "Download PDF Report",
     overall: "Overall",
     detailedBreakdown: "Detailed Breakdown",
-    fluency: "Fluency",
     corrections: "Corrections",
     noErrors: "No major errors detected. Excellent work!",
     coachTips: "Coach's Tips",
@@ -344,7 +212,21 @@ export const translations = {
     passwordRequirement: "To change your password, please enter your current password first.",
     saveChanges: "Save Changes",
     saving: "Saving...",
-    backupData: "Backup Data"
+    backupData: "Backup Data",
+
+    // Feedback System
+    reportRate: "Report / Rate",
+    rateApp: "Rate App",
+    reportProblem: "Report Problem",
+    feedbackExperience: "How is your experience so far?",
+    feedbackCommentLabel: "Optional comments",
+    feedbackBugLabel: "Describe the issue",
+    feedbackCommentPlaceholder: "Tell us what you love or what could be better...",
+    feedbackBugPlaceholder: "Please explain the problem you encountered...",
+    submitFeedback: "Submit Feedback",
+    submitting: "Submitting...",
+    feedbackSuccess: "Success! Thank you for your feedback.",
+    feedbackError: "Error submitting feedback. Please try again."
   },
   zh: {
     // Onboarding
@@ -369,6 +251,7 @@ export const translations = {
     enterEmailForRecovery: "輸入您的電子郵件以接收密碼重置連結。",
     invalidCredentials: "電子郵件或密碼錯誤，請重試。",
     genericAuthError: "驗證失敗，請檢查您的資料。",
+    howToUse: "如何使用此應用程式？",
 
     // Header
     profile: "個人檔案",
@@ -390,6 +273,7 @@ export const translations = {
     grammar: "文法",
     vocabulary: "字彙",
     pronunciation: "發音",
+    fluency: "流利度",
     recentSessions: "最近課程",
     speakingPractice: "口說練習",
     focus: "重點",
@@ -407,6 +291,13 @@ export const translations = {
     recommendedFocus: "建議加強",
     viewDetails: "查看詳情與練習",
     hideDetails: "隱藏詳情",
+    goalLabel: "說話目標",
+    tasksLabel: "針對性練習任務",
+    insightLabel: "個人化洞察",
+    upgradeLabel: "句子升級",
+    actionLabel: "行動",
+    congratsTasks: "所有任務已完成！錄製更多課程以解鎖新策略。",
+    pointsToRefresh: "分後刷新建議",
 
     // Ranks
     rankNovice: "新手",
@@ -430,7 +321,6 @@ export const translations = {
     downloadPdf: "下載 PDF 報告",
     overall: "整體",
     detailedBreakdown: "詳細分析",
-    fluency: "流利度",
     corrections: "修正建議",
     noErrors: "未檢測到重大錯誤。做得好！",
     coachTips: "教練提示",
@@ -447,6 +337,20 @@ export const translations = {
     passwordRequirement: "若要更改密碼，請先輸入您目前的密碼。",
     saveChanges: "儲存變更",
     saving: "儲存中...",
-    backupData: "備份數據"
+    backupData: "備份數據",
+
+    // Feedback System
+    reportRate: "報告問題 / 評分",
+    rateApp: "應用程式評分",
+    reportProblem: "回報問題",
+    feedbackExperience: "您目前的體驗如何？",
+    feedbackCommentLabel: "意見（選填）",
+    feedbackBugLabel: "問題描述",
+    feedbackCommentPlaceholder: "告訴我們您喜歡的地方或可以改進的地方...",
+    feedbackBugPlaceholder: "請詳細描述您遇到的問題...",
+    submitFeedback: "提交意見",
+    submitting: "提交中...",
+    feedbackSuccess: "提交成功！感謝您的意見。",
+    feedbackError: "提交失敗，請稍後再試。"
   }
 };

@@ -60,6 +60,7 @@ const performCleanupAndReload = async (newVersion: string) => {
   }
 
   // B. Clear Browser Cache Storage (Assets, chunks, images)
+  // This ensures we get fresh JS/CSS files
   if ('caches' in window) {
     try {
       const cacheNames = await caches.keys();
@@ -74,26 +75,11 @@ const performCleanupAndReload = async (newVersion: string) => {
     }
   }
 
-  // C. Clear Local Storage to prevent data conflicts
-  // NOTE: We preserve "sb-" keys if you want to keep Supabase sessions alive.
-  const sessionKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'));
-  const sessionData: Record<string, string> = {};
+  // C. DO NOT WIPE LOCAL STORAGE
+  // Previously we cleared localStorage here, which caused users to lose their 
+  // Supabase session (logout) and other persistent state on refresh/update.
+  // We now only update the version key.
   
-  // Backup session
-  sessionKeys.forEach(key => {
-    sessionData[key] = localStorage.getItem(key) || '';
-  });
-
-  // Wipe
-  localStorage.clear();
-  sessionStorage.clear();
-
-  // Restore session
-  Object.keys(sessionData).forEach(key => {
-    localStorage.setItem(key, sessionData[key]);
-  });
-
-  // Set the new version
   localStorage.setItem('app_version', newVersion);
 
   // D. Force Reload from Server (ignoring cache)

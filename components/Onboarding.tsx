@@ -36,7 +36,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ onAuth, onResetPassword, text }
         }
     } catch (e: any) {
         // Suppress console.error here to avoid noise for expected errors
-        
         const errorMessage = e.message || e.error_description || (typeof e === 'string' ? e : '');
         
         // Catch specific Supabase error strings for incorrect credentials
@@ -210,6 +209,21 @@ const Onboarding: React.FC<OnboardingProps> = ({ onAuth, onResetPassword, text }
                 {text.backToLogin}
              </button>
           )}
+
+          {/* Instruction Link */}
+          <div className="mt-8 pt-6 border-t border-gray-800 text-center">
+             <a 
+                href="https://emphasized-nyala-97a.notion.site/Voice-AI-APP-2d1eb1df49ca8071b8bec4674dd89737?source=copy_link" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors group"
+             >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 group-hover:animate-bounce">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
+                </svg>
+                {text.howToUse}
+             </a>
+          </div>
         </form>
       </div>
     </div>

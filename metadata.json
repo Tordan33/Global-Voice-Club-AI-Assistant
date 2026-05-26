@@ -3,5 +3,6 @@
   "description": "A gamified AI English speaking coach that analyzes pronunciation, grammar, and fluency using Gemini 3 Pro.",
   "requestFramePermissions": [
     "microphone"
-  ]
+  ],
+  "majorCapabilities": []
 }

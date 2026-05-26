@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { UserProfile, AIAnalysis, AppView, Language } from './types';
 import Header from './components/Header';
 import Onboarding from './components/Onboarding';
@@ -12,172 +12,72 @@ import { supabase } from './services/supabaseClient';
 import { translations } from './utils/translations';
 import { checkAndEnforceVersion } from './utils/versionManager';
 
-// We now read the version from the manifest via the manager, 
-// but we keep this for the UI display.
-// IMPORTANT: Update 'version.json' when you update this!
-const UI_VERSION = '1.0.51'; 
+const UI_VERSION = '1.0.80'; 
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [userId, setUserId] = useState<string | null>(null); // Supabase Auth ID
+  const [userId, setUserId] = useState<string | null>(null);
   const [view, setView] = useState<AppView>(AppView.ONBOARDING);
   const [history, setHistory] = useState<AIAnalysis[]>([]);
   const [currentAnalysis, setCurrentAnalysis] = useState<AIAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [showResetButton, setShowResetButton] = useState(false); // Fail-safe button
+  const [showResetButton, setShowResetButton] = useState(false);
   
-  // Recovery Mode State (For Password Reset)
   const [isRecoveryMode, setIsRecoveryMode] = useState(false);
-  
-  // Language State - Default to Traditional Chinese ('zh')
   const [language, setLanguage] = useState<Language>('zh');
   const text = translations[language];
 
-  // Initialize Session
-  useEffect(() => {
-    
-    // --- STEP 1: VERSION CHECK ---
-    // This runs immediately. If update is found, it reloads the page before app initializes.
-    checkAndEnforceVersion();
-
-    // Timer to show the "Reset" button if loading takes too long (e.g. > 4 seconds)
-    const resetTimer = setTimeout(() => {
-        if (isLoading) setShowResetButton(true);
-    }, 4000);
-
-    const initApp = async () => {
-        // SAFETY TIMEOUT: Force loading to stop after 7 seconds max
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Initialization timed out")), 7000)
+  const withTimeout = <T,>(promise: Promise<T>, timeoutMs = 60000, operationName = 'Unknown'): Promise<T> => {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`timeout: ${operationName}`)), timeoutMs);
+        promise.then(
+            res => { clearTimeout(timer); resolve(res); },
+            err => { clearTimeout(timer); reject(err); }
         );
-
-        const sessionPromise = async () => {
-            const { data, error } = await supabase.auth.getSession();
-            if (error) throw error;
-            
-            if (data?.session) {
-                await loadUserData(data.session.user.id, data.session.user.email || '');
-            } else {
-                setView(AppView.ONBOARDING);
-            }
-        };
-
-        try {
-            await Promise.race([sessionPromise(), timeoutPromise]);
-        } catch (error) {
-            console.warn("App Initialization fallback:", error);
-            // If anything fails or times out, default to Onboarding so user isn't stuck
-            if (!userId) setView(AppView.ONBOARDING);
-        } finally {
-            setIsLoading(false);
-            clearTimeout(resetTimer);
-        }
-    };
-
-    initApp();
-
-    // 2. Listen for Auth Changes (Password Recovery / Login / Logout)
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-            setIsRecoveryMode(true);
-            setView(AppView.PROFILE); // Direct user to profile to change password
-            setIsLoading(false);
-        } else if (event === 'SIGNED_IN' && session) {
-             // Only reload if we aren't already loaded (prevents double firing)
-             if (!userId) {
-                await loadUserData(session.user.id, session.user.email || '');
-             }
-        } else if (event === 'SIGNED_OUT') {
-            setUser(null);
-            setUserId(null);
-            setHistory([]);
-            setCurrentAnalysis(null);
-            setView(AppView.ONBOARDING);
-            setIsRecoveryMode(false);
-            setIsLoading(false);
-        }
     });
-
-    return () => {
-        authListener.subscription.unsubscribe();
-        clearTimeout(resetTimer);
-    };
-  }, []);
-
-  // Helper to calculate XP/Level from history list
-  const calculateGamification = (historyList: AIAnalysis[]) => {
-      let totalXP = 0;
-      historyList.forEach(item => {
-          const wordCount = item.transcript ? item.transcript.split(' ').length : 0;
-          // Formula: Score + (Words * 0.5)
-          // Rewards length/effort even if score is low
-          totalXP += Math.round(item.score + (wordCount * 0.5));
-      });
-      
-      // PROGRESSIVE LEVELING FORMULA
-      // Level 1 -> 2: 300 XP
-      // Increase by 500 XP per level until Cap of 3000 XP
-      
-      let level = 1;
-      let costForNext = 300;
-      let remainingXP = totalXP;
-
-      while (remainingXP >= costForNext) {
-          remainingXP -= costForNext;
-          level++;
-          
-          // Progressive Increase
-          costForNext += 500;
-          
-          // Cap at 3000
-          if (costForNext > 3000) costForNext = 3000;
-      }
-      
-      return { totalXP, level };
   };
 
-  const loadUserData = async (uid: string, email: string) => {
+  const loadUserData = useCallback(async (uid: string, email: string) => {
     try {
       setUserId(uid);
-      
-      // 1. Fetch Profile (Base Data)
       let profileBase = { name: 'Student', streak: 0, lastRecordingDate: null as string | null };
       
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', uid)
-        .single();
+      const { data: profileData, error: profileError } = await withTimeout(
+        supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
+        60000, 'fetch profile'
+      );
       
-      if (!profileError && profileData) {
+      if (profileData) {
         profileBase = {
-            name: profileData.name,
+            name: profileData.name || 'Student',
             streak: profileData.streak || 0,
             lastRecordingDate: profileData.last_recording_date
         };
       } else {
-          // Fallback if profile missing
-          const { data: { user: authUser } } = await supabase.auth.getUser();
-          profileBase.name = authUser?.user_metadata?.name || 'Student';
+          profileBase.name = 'Student'; // Default name if not in profiles
+          if (!profileError) {
+             await withTimeout(
+                 supabase.from('profiles').upsert({ id: uid, email, name: profileBase.name, streak: 0 }),
+                 60000, 'upsert profile'
+             ).catch(e => console.warn('Supabase upsert profile blocked (RLS or timeout):', e));
+          }
       }
 
-      // 2. Fetch History
-      const { data: historyData, error: historyError } = await supabase
-        .from('history')
-        .select('*')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: true });
+      const { data: historyData } = await withTimeout(
+        supabase.from('history').select('*').eq('user_id', uid).order('created_at', { ascending: true }),
+        60000, 'fetch history'
+      );
 
       let loadedHistory: AIAnalysis[] = [];
-      if (!historyError && historyData) {
+      if (historyData) {
         loadedHistory = historyData.map((h: any) => ({
           transcript: h.transcript,
-          score: h.score,
-          grammarScore: h.grammar_score,
-          pronunciationScore: h.pronunciation_score,
-          fluencyScore: h.fluency_score,
-          vocabularyScore: h.vocabulary_score,
+          score: h.score || 0,
+          grammarScore: h.grammar_score || 0,
+          pronunciationScore: h.pronunciation_score || 0,
+          fluencyScore: h.fluency_score || 0,
+          vocabularyScore: h.vocabulary_score || 0,
           feedback: h.feedback || [], 
           tips: h.tips || [], 
           encouragement: h.encouragement,
@@ -186,8 +86,25 @@ const App: React.FC = () => {
         setHistory(loadedHistory);
       }
       
-      // 3. Calculate Dynamic XP/Level
-      const { totalXP, level } = calculateGamification(loadedHistory);
+      const calculateXP = (historyList: AIAnalysis[]) => {
+          let totalXP = 0;
+          historyList.forEach(item => {
+              const wordCount = item.transcript ? item.transcript.split(' ').length : 0;
+              totalXP += Math.round((item.score || 0) + (wordCount * 0.5));
+          });
+          let level = 1;
+          let costForNext = 300;
+          let remainingXP = totalXP;
+          while (remainingXP >= costForNext) {
+              remainingXP -= costForNext;
+              level++;
+              costForNext += 500;
+              if (costForNext > 3000) costForNext = 3000;
+          }
+          return { totalXP, level };
+      };
+
+      const { totalXP, level } = calculateXP(loadedHistory);
 
       setUser({
         name: profileBase.name,
@@ -198,257 +115,199 @@ const App: React.FC = () => {
         level: level
       });
       
-      // Only go to dashboard if NOT in recovery mode
-      if (!isRecoveryMode) {
+      const savedAnalysisStr = localStorage.getItem('current_analysis');
+      if (savedAnalysisStr) {
+          try {
+              setCurrentAnalysis(JSON.parse(savedAnalysisStr));
+              setView(AppView.ANALYSIS);
+          } catch (e) {
+              localStorage.removeItem('current_analysis');
+              setView(AppView.DASHBOARD);
+          }
+      } else {
           setView(AppView.DASHBOARD);
       }
-    } catch (e) {
-      console.error("Error loading user data", e);
-      // If error occurs but session exists, we should probably still show dashboard or handle gracefully
-    } finally {
       setIsLoading(false);
+    } catch (e) {
+      console.error("Critical error loading user data:", e);
+      if (e instanceof Error && e.message.includes('timeout')) {
+          setShowResetButton(true);
+      } else {
+          setView(AppView.ONBOARDING);
+          setIsLoading(false);
+      }
     }
-  };
+  }, []);
 
-  // Handle Authentication (Login/Signup)
+  useEffect(() => {
+    checkAndEnforceVersion();
+    let isMounted = true;
+    
+    // Safety timer: If app is still loading after 90 seconds, force a retry button
+    const loadingFailsafe = setTimeout(() => {
+        if (isMounted) setShowResetButton(true);
+    }, 90000);
+
+    const initAuth = async () => {
+        try {
+            const { data: { session } } = await withTimeout(supabase.auth.getSession(), 60000, 'getSession');
+
+            if (!isMounted) return;
+            
+            if (session) {
+                await loadUserData(session.user.id, session.user.email || '');
+            } else {
+                setIsLoading(false);
+                setView(AppView.ONBOARDING);
+            }
+        } catch (e) {
+            console.error("Init session error:", e);
+            if (isMounted) {
+                setShowResetButton(true);
+            }
+        }
+    };
+    initAuth();
+    
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!isMounted) return;
+        if (event === 'SIGNED_IN' && session) {
+            try {
+                await loadUserData(session.user.id, session.user.email || '');
+            } catch (e) {
+                console.error('onAuthStateChange loadUserData error:', e);
+            }
+        } else if (event === 'SIGNED_OUT') {
+            setUser(null);
+            setUserId(null);
+            setHistory([]);
+            setCurrentAnalysis(null);
+            localStorage.removeItem('current_analysis');
+            setView(AppView.ONBOARDING);
+            setIsRecoveryMode(false);
+            setIsLoading(false);
+        } else if (event === 'PASSWORD_RECOVERY') {
+            setIsRecoveryMode(true);
+            setView(AppView.PROFILE); 
+            setIsLoading(false);
+        }
+    });
+    
+    return () => {
+        isMounted = false;
+        authListener.subscription.unsubscribe();
+        clearTimeout(loadingFailsafe);
+    };
+  }, [loadUserData]);
+
   const handleAuth = async (email: string, password: string, name: string, mode: 'LOGIN' | 'SIGNUP') => {
-    setIsLoading(true);
     try {
       if (mode === 'SIGNUP') {
         const { data, error } = await supabase.auth.signUp({ 
-            email, 
-            password,
-            options: {
-                data: { name: name } // Store name in metadata as backup
-            }
+            email, password, options: { data: { name: name } }
         });
         
         if (error) throw error;
-
-        // CRITICAL: Check if session exists. 
-        if (data.user && !data.session) {
-            alert("Registration successful! Please check your email to verify your account before logging in.");
-            setIsLoading(false);
-            return; 
+        if (data?.user && !data?.session) {
+            // Replaced alert with a proper error throw so the user gets notified in the UI instead of stuck
+            throw new Error("Please check your email to verify your registration.");
         }
-
-        if (data.user && data.session) {
-          // Create Profile Row immediately if we have a session
-          const { error: profileError } = await supabase.from('profiles').insert({
-            id: data.user.id,
-            email: email,
-            name: name,
-            streak: 0,
-            last_recording_date: null
-          });
-
-          if (profileError) {
-              console.error("Profile creation warning:", profileError);
-          }
-
+        if (data?.user && data?.session) {
+          await supabase.from('profiles').upsert({ id: data.user.id, email, name, streak: 0 }).catch(e => console.warn(e));
           await loadUserData(data.user.id, email);
         }
       } else {
-        // Login
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        
         if (error) throw error;
-        if (data.user) {
-          await loadUserData(data.user.id, email);
-        }
+        // Don't call loadUserData here if you want to avoid double loading, but returning immediately is fine
+        // as loadUserData handles safety checks inside itself, avoiding duplicates isn't strictly necessary 
+        // since we removed the aggressive timeout logic.
+        if (data?.user) await loadUserData(data.user.id, email);
       }
     } catch (error: any) {
-      // Suppress console.error for auth failures to prevent alarm
-      setIsLoading(false);
-      // Re-throw so component can handle UI message
       throw error;
     }
   };
 
   const handleResetPassword = async (email: string) => {
-      // DYNAMIC URL FIX:
-      // Uses window.location.origin to work on both Dev and Production (Cloud Run)
-      const redirectUrl = window.location.origin;
-      
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: redirectUrl,
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
       if (error) throw error;
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUserId(null);
-    setUser(null);
-    setHistory([]);
-    setCurrentAnalysis(null);
-    setView(AppView.ONBOARDING);
+    setIsLoading(true);
+    await supabase.auth.signOut().catch(e => console.warn(e));
   };
 
   const handleUpdateProfile = async (newName: string, currentPassword?: string, newPassword?: string) => {
     if (!user || !userId) return;
-
     try {
-      // 1. Update Profile Table
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ name: newName })
-        .eq('id', userId);
-
-      if (updateError) throw updateError;
-
-      // 2. Update Password (if provided)
+      await supabase.from('profiles').update({ name: newName }).eq('id', userId);
       if (newPassword) {
-        // If NOT in recovery mode, we MUST verify the old password first for security.
         if (!isRecoveryMode && currentPassword) {
-            const { error: verifyError } = await supabase.auth.signInWithPassword({
-                email: user.email,
-                password: currentPassword
-            });
-
-            if (verifyError) {
-                throw new Error("Incorrect current password. Cannot update password.");
-            }
+            await supabase.auth.signInWithPassword({ email: user.email, password: currentPassword });
         }
-        
-        // Update to new password
-        const { error: pwError } = await supabase.auth.updateUser({ password: newPassword });
-        if (pwError) throw pwError;
-        
-        // If successful, exit recovery mode
+        await supabase.auth.updateUser({ password: newPassword });
         if (isRecoveryMode) {
             setIsRecoveryMode(false);
-            alert("Password updated successfully! Redirecting to Dashboard.");
             setView(AppView.DASHBOARD);
-            return; // Exit early to avoid double alert
+            return; 
         }
       }
-
-      // Update Local State (preserve XP/Level)
       setUser({ ...user, name: newName });
-
-    } catch (error: any) {
-      console.error("Update failed", error);
-      throw error; 
-    }
+    } catch (error: any) { throw error; }
   };
 
-  const handleStartRecording = () => {
-    setView(AppView.RECORDING);
-  };
-
-  // NOTE: Changed to async and removed internal try/catch logic to allow errors 
-  // to propagate to the AudioRecorder component for display.
-  const handleAnalyze = async (audioBase64: string, duration: number, mimeType: string) => {
+  const handleAnalyze = useCallback(async (audioBase64: string, duration: number, mimeType: string) => {
     if (!user || !userId) return;
-    
     setIsAnalyzing(true);
     try {
-      // Pass language to Gemini
       const analysis = await analyzeAudio(audioBase64, duration, mimeType, language);
-      
-      // Update Streak logic
-      const today = new Date().toDateString();
-      const lastDate = user.lastRecordingDate ? new Date(user.lastRecordingDate).toDateString() : null;
       const isoTimestamp = new Date().toISOString();
-      
-      let newStreak = user.streak;
-      if (lastDate !== today) {
-          newStreak = user.streak + 1;
-      }
-
-      // 1. Save to History DB
-      const { error: historyError } = await supabase.from('history').insert({
-        user_id: userId,
-        transcript: analysis.transcript,
-        score: analysis.score,
-        grammar_score: analysis.grammarScore,
-        pronunciation_score: analysis.pronunciationScore,
-        fluency_score: analysis.fluencyScore,
-        vocabulary_score: analysis.vocabularyScore,
-        feedback: analysis.feedback || [], 
-        tips: analysis.tips || [], 
-        encouragement: analysis.encouragement,
-        created_at: isoTimestamp
-      });
-
-      if (historyError) {
-          // If error is related to response size, log it but don't crash app if possible
-          console.error("Failed to save history:", historyError.message);
-      }
-
-      // 2. Update Profile DB (Streak only)
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({ 
-          id: userId,
-          name: user.name,
-          email: user.email,
-          streak: newStreak, 
-          last_recording_date: isoTimestamp 
-        });
-
-      if (profileError) console.error("Failed to update streak", profileError);
-
-      // 3. Update Local State (Recalculate XP)
       analysis.timestamp = isoTimestamp;
+      const lastDate = user.lastRecordingDate ? new Date(user.lastRecordingDate).toDateString() : null;
+      const today = new Date().toDateString();
+      const newStreak = lastDate !== today ? user.streak + 1 : user.streak;
       const newHistory = [...history, analysis];
-      const { totalXP, level } = calculateGamification(newHistory);
-
-      setUser({
-          ...user,
-          streak: newStreak,
-          lastRecordingDate: isoTimestamp,
-          xp: totalXP,
-          level: level
-      });
-      
       setCurrentAnalysis(analysis);
       setHistory(newHistory);
-
+      localStorage.setItem('current_analysis', JSON.stringify(analysis));
       setView(AppView.ANALYSIS);
-    } catch (error: any) {
-      console.error("Analysis Error in App:", error);
-      // Re-throw so AudioRecorder can catch and display
-      throw error;
-    } finally {
       setIsAnalyzing(false);
+      (async () => {
+          await supabase.from('history').insert({
+            user_id: userId,
+            transcript: analysis.transcript,
+            score: analysis.score,
+            grammar_score: analysis.grammarScore,
+            pronunciation_score: analysis.pronunciationScore,
+            fluency_score: analysis.fluencyScore,
+            vocabulary_score: analysis.vocabularyScore,
+            feedback: analysis.feedback || [], 
+            tips: analysis.tips || [], 
+            encouragement: analysis.encouragement,
+            created_at: isoTimestamp
+          });
+          await supabase.from('profiles').upsert({ id: userId, streak: newStreak, last_recording_date: isoTimestamp });
+      })();
+    } catch (error: any) {
+      setIsAnalyzing(false);
+      throw error;
     }
-  };
-
-  const handleCloseFeedback = () => {
-    setCurrentAnalysis(null);
-    setView(AppView.DASHBOARD);
-  };
-
-  const handleViewHistory = (analysis: AIAnalysis) => {
-    setCurrentAnalysis(analysis);
-    setView(AppView.ANALYSIS);
-  };
-
-  // Manual Hard Reset for "Stuck" scenarios
-  const handleManualReset = () => {
-      // Clear all local storage to remove potentially corrupt tokens
-      localStorage.clear();
-      // Force reload the page
-      window.location.reload();
-  };
+  }, [user, userId, history, language]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-6 p-4 text-center">
-        <div className="text-blue-500 animate-pulse text-xl font-serif">Loading Global Voice Club...</div>
-        
+        <div className="text-blue-500 animate-pulse text-xl font-serif">Global Voice Club</div>
         {showResetButton && (
-            <div className="animate-fade-in flex flex-col items-center">
-                <p className="text-gray-500 text-sm mb-3">Taking longer than usual?</p>
-                <button 
-                    onClick={handleManualReset}
-                    className="px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white hover:bg-gray-700 hover:border-white transition-all flex items-center gap-2 text-sm"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-                    </svg>
-                    Refresh & Fix
+            <div className="flex flex-col items-center gap-4">
+                <p className="text-red-400 text-sm max-w-sm">
+                   Connection to database timed out. The database might be paused.
+                </p>
+                <button onClick={() => window.location.reload()} className="px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm">
+                    Retry Connection
                 </button>
             </div>
         )}
@@ -457,7 +316,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden w-full flex flex-col">
+    <div className="min-h-screen bg-black text-white font-sans overflow-x-hidden w-full flex flex-col">
       <Header 
         user={user} 
         text={text}
@@ -468,59 +327,21 @@ const App: React.FC = () => {
         onProfileClick={() => setView(AppView.PROFILE)}
         onLogoClick={() => setView(AppView.DASHBOARD)}
       />
-      
-      {/* 
-        LAYOUT FIX: 
-        Replaced 'container' and 'max-w-full' with an explicit centered container.
-        This fixes the off-center issue on mobile devices.
-      */}
       <main className="w-full max-w-[95%] 2xl:max-w-[1800px] mx-auto px-4 md:px-8 pt-6 pb-12 flex-grow">
         {view === AppView.ONBOARDING && (
-          <Onboarding 
-            onAuth={handleAuth} 
-            onResetPassword={handleResetPassword}
-            text={text}
-          />
+          <Onboarding onAuth={handleAuth} onResetPassword={handleResetPassword} text={text} />
         )}
-        
-        {view === AppView.DASHBOARD && user && (
-          <Dashboard 
-            user={user} 
-            history={history} 
-            onStartRecording={handleStartRecording}
-            onViewHistory={handleViewHistory}
-            text={text}
-          />
+        {view === AppView.DASHBOARD && user && userId && (
+          <Dashboard user={user} userId={userId} history={history} onStartRecording={() => setView(AppView.RECORDING)} onViewHistory={(a) => { setCurrentAnalysis(a); setView(AppView.ANALYSIS); }} text={text} />
         )}
-
         {view === AppView.PROFILE && user && (
-            <Profile 
-                user={user}
-                history={history}
-                onUpdateProfile={handleUpdateProfile}
-                onBack={() => setView(AppView.DASHBOARD)}
-                text={text}
-                isRecoveryMode={isRecoveryMode}
-            />
+            <Profile user={user} history={history} onUpdateProfile={handleUpdateProfile} onBack={() => setView(AppView.DASHBOARD)} text={text} isRecoveryMode={isRecoveryMode} />
         )}
-        
         {view === AppView.RECORDING && (
-          <AudioRecorder 
-            onAnalyze={handleAnalyze} 
-            isAnalyzing={isAnalyzing}
-            onBack={() => setView(AppView.DASHBOARD)}
-            text={text}
-          />
+          <AudioRecorder onAnalyze={handleAnalyze} isAnalyzing={isAnalyzing} onBack={() => setView(AppView.DASHBOARD)} text={text} />
         )}
-        
         {view === AppView.ANALYSIS && currentAnalysis && user && (
-          <FeedbackDisplay 
-            analysis={currentAnalysis} 
-            userName={user.name}
-            userEmail={user.email}
-            onClose={handleCloseFeedback}
-            text={text}
-          />
+          <FeedbackDisplay analysis={currentAnalysis} userName={user.name} userEmail={user.email} onClose={() => setView(AppView.DASHBOARD)} text={text} />
         )}
       </main>
     </div>

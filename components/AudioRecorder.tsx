@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AppText } from '../types';
 
 interface AudioRecorderProps {
@@ -13,6 +13,8 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
   const [recording, setRecording] = useState(false);
   const [timer, setTimer] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  
   const timerRef = useRef(0);
   
   // Audio Visualization State
@@ -45,14 +47,93 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
   // Frontend Watchdog: 100s. Backend tries to finish in 55s.
   const TIMEOUT_LIMIT_MS = 100000; 
 
+  // --- 1. CLEANUP & LIFECYCLE MANAGEMENT ---
+  
+  const cleanupAudio = useCallback(() => {
+    // Stop Timer
+    if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+    }
+    // Stop Visualizer
+    if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+    }
+    
+    // Stop Tracks (Release Microphone) - ONLY on component unmount
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }
+
+    // Close Context
+    if (audioContextRef.current) {
+        if (audioContextRef.current.state !== 'closed') {
+            audioContextRef.current.close().catch(e => console.warn("Error closing AudioContext:", e));
+        }
+        audioContextRef.current = null;
+    }
+  }, []);
+
+  // Run cleanup only when the component unmounts
   useEffect(() => {
+    // Check permission status on mount
+    const checkPermission = async () => {
+        try {
+            if (navigator.permissions && navigator.permissions.query) {
+                const status = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+                if (status.state === 'granted') setHasPermission(true);
+            }
+        } catch (e) {
+            // Permission API not supported or failed, ignore
+        }
+    };
+    checkPermission();
+
     return () => {
       cleanupAudio();
       if (watchdogRef.current) clearTimeout(watchdogRef.current);
     };
-  }, []);
+  }, [cleanupAudio]);
 
-  // Adaptive Progress Bar & Watchdog Logic
+
+  // --- 2. PREVENT ACCIDENTAL REFRESH / NAVIGATION ---
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        if (recording || isAnalyzing) {
+            e.preventDefault();
+            e.returnValue = ''; // Chrome requires this
+            return '';
+        }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [recording, isAnalyzing]);
+
+  // --- 3. iOS SAFARI VISIBILITY HANDLER ---
+  useEffect(() => {
+      const handleVisibilityChange = async () => {
+          if (document.visibilityState === 'visible' && recording) {
+              // Resume AudioContext if it was suspended by iOS
+              if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+                  try {
+                      await audioContextRef.current.resume();
+                      console.log("AudioContext resumed after visibility change");
+                  } catch (e) {
+                      console.warn("Failed to resume AudioContext", e);
+                  }
+              }
+          }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [recording]);
+
+
+  // --- 4. PROGRESS & WATCHDOG ---
   useEffect(() => {
     let progressInterval: number;
     
@@ -105,31 +186,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
     };
   }, [isAnalyzing]);
 
-  const cleanupAudio = () => {
-    if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-    }
-    if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-    }
-    
-    // Stop tracks immediately
-    if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-    }
-
-    // Close Context
-    if (audioContextRef.current) {
-        if (audioContextRef.current.state !== 'closed') {
-            audioContextRef.current.close().catch(e => console.warn("Error closing AudioContext:", e));
-        }
-        audioContextRef.current = null;
-    }
-  };
-
   const getSupportedMimeType = () => {
       // Prioritize MP4/AAC for Safari compatibility, then WebM for Chrome/Android
       const types = [
@@ -145,27 +201,43 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
       return ''; 
   };
 
+  // --- 5. RECORDING LOGIC ---
+
   const startRecording = async () => {
     setError(null);
     let rawStream: MediaStream | null = null;
     let recordingStream: MediaStream | null = null;
 
     try {
-      // 1. GET RAW STREAM
-      rawStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-            channelCount: 1, 
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-        } 
-      });
-      streamRef.current = rawStream;
+      // PERMISSION PERSISTENCE: Reuse existing stream if active
+      if (streamRef.current && streamRef.current.active) {
+          rawStream = streamRef.current;
+      } else {
+          // Request Permission only if stream is missing or inactive
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+              throw new Error("Your browser or the current environment does not support microphone access. If you are in a preview iframe, try opening the app in a new tab.");
+          }
+          rawStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+                channelCount: 1, 
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            } 
+          });
+          streamRef.current = rawStream;
+          setHasPermission(true);
+      }
 
       // 2. SOFTWARE RESAMPLING (16kHz Mono)
       try {
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-          const ctx = new AudioContextClass({ sampleRate: 16000 });
+          // Reuse AudioContext if it exists, otherwise create new
+          let ctx = audioContextRef.current;
+          if (!ctx || ctx.state === 'closed') {
+              const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+              ctx = new AudioContextClass({ sampleRate: 16000 });
+              audioContextRef.current = ctx;
+          }
           
           // CRITICAL IOS FIX: Resume context immediately
           if (ctx.state === 'suspended') {
@@ -180,21 +252,25 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
           
           source.connect(dest);
           
-          audioContextRef.current = ctx;
           sourceRef.current = source;
           recordingStream = dest.stream;
           
-          const analyser = ctx.createAnalyser();
-          analyser.fftSize = 128; 
-          source.connect(analyser); 
-          analyserRef.current = analyser;
+          // Re-create analyzer only if needed
+          if (!analyserRef.current) {
+              const analyser = ctx.createAnalyser();
+              analyser.fftSize = 128; 
+              source.connect(analyser); 
+              analyserRef.current = analyser;
+          } else {
+              source.connect(analyserRef.current);
+          }
           
       } catch (e) {
           console.warn("Resampling failed, using raw stream.", e);
           recordingStream = rawStream;
       }
 
-      // 3. Visualizer
+      // 3. Visualizer Loop
       const bufferLength = analyserRef.current?.frequencyBinCount || 0;
       const dataArray = new Uint8Array(bufferLength);
       
@@ -218,8 +294,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
       const selectedMimeType = getSupportedMimeType();
       activeMimeTypeRef.current = selectedMimeType;
       
-      const isOpus = selectedMimeType.includes('opus');
-      
       // 32kbps ensures better audio quality for AI analysis without bloating file size too much
       let options: MediaRecorderOptions = { 
           mimeType: selectedMimeType,
@@ -242,9 +316,18 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
       };
 
       mediaRecorder.onstop = async () => {
-        // AGGRESSIVE RESOURCE CLEANUP: 
-        // We must stop all audio streams BEFORE processing the blob to save CPU on mobile.
-        cleanupAudio();
+        // --- STOP TIMER IMMEDIATELY ---
+        if (timerIntervalRef.current) {
+            clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
+        }
+
+        // DO NOT stop streamRef here. We want to keep the mic open for retries.
+        // We only stop the visualizer loop to save CPU.
+        if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+            animationFrameRef.current = null;
+        }
 
         try {
             const blob = new Blob(chunksRef.current, { type: selectedMimeType });
@@ -285,7 +368,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
         }
       };
 
-      mediaRecorder.start(1000); 
+      mediaRecorder.start(); 
       setRecording(true);
       setTimer(0);
       timerRef.current = 0;
@@ -307,9 +390,9 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
         });
       }, 1000);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError("Could not access microphone.");
+      setError(err?.name === "NotAllowedError" ? "Microphone access denied. Please allow microphone permissions." : `Error: ${err?.message || "Could not access microphone."}`);
     }
   };
 
@@ -317,7 +400,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
       setRecording(false);
-      // Cleanup happens in onstop event handler
+      // Cleanup of visualizer etc happens in onstop event handler
     }
   };
 
@@ -374,6 +457,13 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({ onAnalyze, isAnalyzing, o
             ))}
         </div>
       </div>
+
+      {/* Permission Reminder */}
+      {!recording && !isAnalyzing && !hasPermission && (
+          <div className="mb-6 text-sm text-gray-400 bg-gray-900/50 px-4 py-2 rounded-full border border-gray-800">
+             Tap Start to enable microphone
+          </div>
+      )}
 
       {error && (
         <div className="bg-red-900/40 text-red-300 p-4 rounded-lg mb-6 text-sm border border-red-800 animate-pulse max-w-md text-left w-full">
